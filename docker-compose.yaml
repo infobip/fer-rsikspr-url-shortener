@@ -1,0 +1,206 @@
+services:
+
+# Data plane
+
+  urls-db:
+    image: mariadb:11.7-noble
+    user: ${UID}:${GID}
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: urls
+      MARIADB_ROOT_PASSWORD: ${URLS_DB_ROOT_PASSWORD}
+      URLS_DB_SHORTENER_PASSWORD: ${URLS_DB_SHORTENER_PASSWORD}
+      URLS_DB_REDIRECT_PASSWORD: ${URLS_DB_REDIRECT_PASSWORD}
+    volumes:
+      - ./urls-db/init:/docker-entrypoint-initdb.d
+      - ./urls-db/data:/var/lib/mysql:Z
+    healthcheck:
+      interval: 10s
+      retries: 10
+      timeout: 30s
+      test: [ "CMD", "healthcheck.sh", "--connect", "--innodb_initialized" ]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 300M
+
+  stats-db:
+    image: mariadb:11.7-noble
+    user: ${UID}:${GID}
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: stats
+      MARIADB_ROOT_PASSWORD: ${STATS_DB_ROOT_PASSWORD}
+      STATS_DB_RECORDING_PASSWORD: ${STATS_DB_RECORDING_PASSWORD}
+    volumes:
+      - ./stats-db/init:/docker-entrypoint-initdb.d
+      - ./stats-db/data:/var/lib/mysql:Z
+    healthcheck:
+      interval: 10s
+      retries: 10
+      timeout: 30s
+      test: [ "CMD", "healthcheck.sh", "--connect", "--innodb_initialized" ]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 300M
+
+  urls-cache:
+    image: redis/redis-stack:7.4.0-v3
+    restart: unless-stopped
+    environment:
+      REDIS_ARGS: "--requirepass ${URLS_CACHE_DEFAULT_PASSWORD} --user redirect on >${URLS_CACHE_REDIRECT_PASSWORD} ~* allcommands --user default on >${URLS_CACHE_DEFAULT_PASSWORD} ~* allcommands"
+    ports:
+      - "8001:8001" # RedisInsights, part of the control plane
+    healthcheck:
+      interval: 10s
+      retries: 10
+      timeout: 30s
+      test: [ "CMD", "redis-cli", "-a", "${URLS_CACHE_DEFAULT_PASSWORD}", "--raw", "incr", "ping" ]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 300M
+
+  events-queue:
+    image: rabbitmq:4.1-management-alpine
+    user: ${UID}:${GID}
+    restart: unless-stopped
+    hostname: events-queue
+    environment:
+      RABBITMQ_DEFAULT_USER: redirect
+      RABBITMQ_DEFAULT_PASS: ${EVENTS_QUEUE_REDIRECT_PASSWORD}
+    volumes:
+      - ./events-queue/data:/var/lib/rabbitmq/mnesia
+    ports:
+      - "15672:15672" # Admin pannel, part of the control plane
+    healthcheck:
+      interval: 10s
+      retries: 10
+      timeout: 30s
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 300M
+
+  shortener-service:
+    build: ./shortener-service
+    restart: unless-stopped
+    depends_on:
+      urls-db:
+        condition: service_healthy
+    environment:
+      URLS_DB_SHORTENER_PASSWORD: ${URLS_DB_SHORTENER_PASSWORD}
+    healthcheck:
+      interval: 10s
+      retries: 10
+      timeout: 30s
+      test: "wget -q -S -O - http://localhost:8081/actuator/health 2>&1 | grep UP || exit 1"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 300M
+
+  redirect-service:
+    build: ./redirect-service
+    restart: unless-stopped
+    depends_on:
+      urls-db:
+        condition: service_healthy
+      urls-cache:
+        condition: service_healthy
+      events-queue:
+        condition: service_healthy
+      # redirect-service ovisi o shemi base koju definira shortener-service, zato:
+      shortener-service:
+        condition: service_healthy
+    environment:
+      URLS_DB_REDIRECT_PASSWORD: ${URLS_DB_REDIRECT_PASSWORD}
+      URLS_CACHE_REDIRECT_PASSWORD: ${URLS_CACHE_REDIRECT_PASSWORD}
+      EVENTS_QUEUE_REDIRECT_PASSWORD: ${EVENTS_QUEUE_REDIRECT_PASSWORD}
+    healthcheck:
+      interval: 10s
+      retries: 10
+      timeout: 30s
+      test: "wget -q -S -O - http://localhost:8081/actuator/health 2>&1 | grep UP || exit 1"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 500M
+
+  recording-service:
+    build: ./recording-service
+    restart: unless-stopped
+    depends_on:
+      stats-db:
+        condition: service_healthy
+      events-queue:
+        condition: service_healthy
+      # recording-service ovisi o RabbitMQ strukturi koju definira redirect-service, zato:
+      redirect-service:
+        condition: service_healthy
+    environment:
+      STATS_DB_RECORDING_PASSWORD: ${STATS_DB_RECORDING_PASSWORD}
+      EVENTS_QUEUE_REDIRECT_PASSWORD: ${EVENTS_QUEUE_REDIRECT_PASSWORD}
+    healthcheck:
+      interval: 10s
+      retries: 10
+      timeout: 30s
+      test: "wget -q -S -O - http://localhost:8081/actuator/health 2>&1 | grep UP || exit 1"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 500M
+
+  api-gateway:
+    build: ./api-gateway
+    restart: unless-stopped
+    # jedino api-gateway objavljuje svoj HTTP port na host računalu, ostali containeri nisu dostupni:
+    ports:
+      - "8080:8080"
+    healthcheck:
+      interval: 10s
+      retries: 10
+      timeout: 30s
+      test: "wget -q -S -O - http://localhost:8081/actuator/health 2>&1 | grep UP || exit 1"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 500M
+
+# Control plane
+
+  php-my-admin:
+    image: phpmyadmin:5.2-apache
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    environment:
+      PMA_HOSTS: urls-db,stats-db
+      PMA_PORTS: 3306,3306
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 100M
+
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.11.1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./otel-lgtm/data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G

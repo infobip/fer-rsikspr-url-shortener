@@ -1,0 +1,38 @@
+spring:
+  application.name: redirect-service
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+
+  datasource:
+    url: jdbc:mariadb://urls-db:3306/urls
+    username: redirect
+    password: ${URLS_DB_REDIRECT_PASSWORD}
+    driver-class-name: org.mariadb.jdbc.Driver
+
+  data:
+    redis:
+      host: urls-cache
+      port: 6379
+      database: 0
+      username: redirect
+      password: ${URLS_CACHE_REDIRECT_PASSWORD}
+      connect-timeout: 1000ms
+
+  rabbitmq:
+    host: events-queue
+    port: 5672
+    username: redirect
+    password: ${EVENTS_QUEUE_REDIRECT_PASSWORD}
+    connection-timeout: 1000ms
+
+management.server.port: 8081
+
+otel:
+  exporter:
+    otlp:
+      protocol: grpc
+      endpoint: http://otel-lgtm:4317
+
+logging.level.org.hibernate: FATAL

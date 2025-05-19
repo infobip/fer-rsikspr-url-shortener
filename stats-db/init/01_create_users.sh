@@ -1,0 +1,4 @@
+mariadb -u root -p$MARIADB_ROOT_PASSWORD --execute \
+"CREATE USER IF NOT EXISTS 'recording'@'%' IDENTIFIED BY '$STATS_DB_RECORDING_PASSWORD';
+GRANT ALL ON *.* TO 'recording'@'%';
+FLUSH PRIVILEGES;"

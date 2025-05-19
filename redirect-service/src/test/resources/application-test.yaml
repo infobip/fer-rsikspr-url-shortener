@@ -1,0 +1,10 @@
+spring:
+  jpa:
+    show-sql: true
+    defer-datasource-initialization: true
+
+  datasource:
+    url: jdbc:h2:mem:urls;INIT=CREATE SCHEMA IF NOT EXISTS urls
+    username: redirect
+    password:
+    driver-class-name: org.h2.Driver

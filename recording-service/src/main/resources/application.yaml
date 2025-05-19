@@ -1,0 +1,28 @@
+spring:
+  application.name: recording-service
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+  datasource:
+    url: jdbc:mariadb://stats-db:3306/stats
+    username: recording
+    password: ${STATS_DB_RECORDING_PASSWORD}
+    driver-class-name: org.mariadb.jdbc.Driver
+
+  rabbitmq:
+    host: events-queue
+    port: 5672
+    username: redirect
+    password: ${EVENTS_QUEUE_REDIRECT_PASSWORD}
+
+management.server.port: 8081
+
+otel:
+  exporter:
+    otlp:
+      protocol: grpc
+      endpoint: http://otel-lgtm:4317
+
+logging.level.org.hibernate: FATAL

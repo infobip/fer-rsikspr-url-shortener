@@ -1,0 +1,22 @@
+spring:
+  application.name: shortener-service
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+  datasource:
+    url: jdbc:mariadb://urls-db:3306/urls
+    username: shortener
+    password: ${URLS_DB_SHORTENER_PASSWORD}
+    driver-class-name: org.mariadb.jdbc.Driver
+
+management.server.port: 8081
+
+otel:
+  exporter:
+    otlp:
+      protocol: grpc
+      endpoint: http://otel-lgtm:4317
+
+logging.level.org.hibernate: FATAL

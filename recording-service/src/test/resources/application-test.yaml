@@ -1,0 +1,12 @@
+spring:
+  jpa:
+    show-sql: true
+    defer-datasource-initialization: true
+    hibernate:
+      ddl-auto: create-drop # create-drop is useful for testing because we want to have a clean initialization every time
+
+  datasource:
+    url: jdbc:h2:mem:urls;INIT=CREATE SCHEMA IF NOT EXISTS stats
+    username: recording
+    password:
+    driver-class-name: org.h2.Driver
